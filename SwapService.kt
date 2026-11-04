@@ -19,11 +19,12 @@ class SwapService : Service() {
     private lateinit var windowManager: WindowManager
     private lateinit var floatingView: View
 
-    private lateinit var circle1: View // زر سلاح الكليرك
-    private lateinit var circle2: View // زر سلاح الويزرد
-    private lateinit var barFrame: View // الشريط الأخضر لصف اسكلات الكليرك (بدل الدائرة 3)
+    private lateinit var circle1: View // 1. زر سلاح الكليرك
+    private lateinit var circle2: View // 2. زر سلاح الويزرد
+    private lateinit var skillBar: View // 3. الشريط العريض لتحديد مكان شريط الدم أو صف الاسكلات
 
     private val handler = Handler(Looper.getMainLooper())
+    private var isMonitoring = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -59,6 +60,7 @@ class SwapService : Service() {
         try {
             windowManager.addView(floatingView, layoutParams)
             setupFloatingElements()
+            startHpAndSkillMonitoring() // بدء المراقبة المستمرة للشريط والدم
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -85,23 +87,51 @@ class SwapService : Service() {
             background = resources.getDrawable(android.R.drawable.presence_busy, null)
         }
 
-        // 3. الشريط الأخضر (بدل الدائرة 3 لتغطية صف الاسكلات)
-        barFrame = View(context).apply {
-            layoutParams = FrameLayout.LayoutParams(500, 140).apply {
+        // 3. الشريط العريض (تضعه فوق شريط الدم الأحمر أو الاسكلات)
+        skillBar = View(context).apply {
+            layoutParams = FrameLayout.LayoutParams(600, 130).apply {
                 leftMargin = 400
                 topMargin = 150
             }
-            setBackgroundColor(0x3300FF00.toInt()) // لون شفاف بإطار أخضر خفيف
+            setBackgroundColor(0x4400FF00.toInt()) // لون أخضر شفاف لتحديد المكان بدقة
         }
 
         val container = floatingView as FrameLayout
         container.addView(circle1)
         container.addView(circle2)
-        container.addView(barFrame)
+        container.addView(skillBar)
 
         enableDragging(circle1)
         enableDragging(circle2)
-        enableDragging(barFrame)
+        enableDragging(skillBar)
+    }
+
+    private fun startHpAndSkillMonitoring() {
+        isMonitoring = true
+        handler.post(object : Runnable {
+            override fun run() {
+                if (!isMonitoring) return
+
+                // احداثيات الشريط العريض الحالية (مكان شريط الدم أو الاسكلات على الشاشة)
+                val barParams = skillBar.layoutParams as FrameLayout.LayoutParams
+                val barX = barParams.leftMargin
+                val barY = barParams.topMargin
+                val barWidth = skillBar.width
+                val barHeight = skillBar.height
+
+                // TODO: هنا يتم قراءة بكسلات الشاشة داخل حدود (barX, barY, barWidth, barHeight)
+                // فحص ما إذا كان اللون الأحمر (شريط الدم) قد نقص أو قل تدريجياً:
+                booleanHpDroppedAndSwitchToCleric()
+
+                // التكرار كل 200 ميلي ثانية لضمان سرعة الاستجابة والتبديل الفوري
+                handler.postDelayed(this, 200)
+            }
+        })
+    }
+
+    private fun booleanHpDroppedAndSwitchToCleric() {
+        // منطق فحص النقص التدريجي للدم (HP Drop Detection):
+        // إذا نقص الدم -> يتم محاكاة ضغطة زر الكليرك (رقم 1) فوراً.
     }
 
     private fun enableDragging(view: View) {
@@ -133,6 +163,7 @@ class SwapService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        isMonitoring = false
         if (::floatingView.isInitialized) {
             windowManager.removeView(floatingView)
         }
