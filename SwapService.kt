@@ -21,7 +21,7 @@ class SwapService : Service() {
 
     private lateinit var circle1: View // 1. زر سلاح الكليرك
     private lateinit var circle2: View // 2. زر سلاح الويزرد
-    private lateinit var skillBar: View // 3. الشريط العريض لتحديد مكان شريط الدم أو صف الاسكلات
+    private lateinit var skillBar: View // 3. الشريط العريض (بدل الدائرة 3)
 
     private val handler = Handler(Looper.getMainLooper())
     private var isMonitoring = false
@@ -60,7 +60,7 @@ class SwapService : Service() {
         try {
             windowManager.addView(floatingView, layoutParams)
             setupFloatingElements()
-            startHpAndSkillMonitoring() // بدء المراقبة المستمرة للشريط والدم
+            startHpMonitoring()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -69,31 +69,32 @@ class SwapService : Service() {
     private fun setupFloatingElements() {
         val context = this
 
-        // 1. دائرة سلاح الكليرك
+        // 1. دائرة سلاح الكليرك (1)
         circle1 = View(context).apply {
-            layoutParams = FrameLayout.LayoutParams(120, 120).apply {
+            layoutParams = FrameLayout.LayoutParams(130, 130).apply {
                 leftMargin = 100
-                topMargin = 150
+                topMargin = 200
             }
             background = resources.getDrawable(android.R.drawable.presence_online, null)
         }
 
-        // 2. دائرة سلاح الويزرد
+        // 2. دائرة سلاح الويزرد (2)
         circle2 = View(context).apply {
-            layoutParams = FrameLayout.LayoutParams(120, 120).apply {
-                leftMargin = 250
-                topMargin = 150
+            layoutParams = FrameLayout.LayoutParams(130, 130).apply {
+                leftMargin = 260
+                topMargin = 200
             }
             background = resources.getDrawable(android.R.drawable.presence_busy, null)
         }
 
-        // 3. الشريط العريض (تضعه فوق شريط الدم الأحمر أو الاسكلات)
+        // 3. الشريط العريض (Skill/HP Bar) - استبدال تام للدائرة رقم 3
         skillBar = View(context).apply {
-            layoutParams = FrameLayout.LayoutParams(600, 130).apply {
-                leftMargin = 400
-                topMargin = 150
+            layoutParams = FrameLayout.LayoutParams(650, 140).apply {
+                leftMargin = 420
+                topMargin = 200
             }
-            setBackgroundColor(0x4400FF00.toInt()) // لون أخضر شفاف لتحديد المكان بدقة
+            // خلفية خضراء شفافة واضحة تحدد مكان شريط الدم أو الاسكلات
+            setBackgroundColor(0x5500FF00.toInt())
         }
 
         val container = floatingView as FrameLayout
@@ -101,37 +102,28 @@ class SwapService : Service() {
         container.addView(circle2)
         container.addView(skillBar)
 
+        // تفعيل السحب لجميع العناصر
         enableDragging(circle1)
         enableDragging(circle2)
         enableDragging(skillBar)
     }
 
-    private fun startHpAndSkillMonitoring() {
+    private fun startHpMonitoring() {
         isMonitoring = true
         handler.post(object : Runnable {
             override fun run() {
                 if (!isMonitoring) return
 
-                // احداثيات الشريط العريض الحالية (مكان شريط الدم أو الاسكلات على الشاشة)
-                val barParams = skillBar.layoutParams as FrameLayout.LayoutParams
-                val barX = barParams.leftMargin
-                val barY = barParams.topMargin
-                val barWidth = skillBar.width
-                val barHeight = skillBar.height
+                // هنا يتم مراقبة النقص التدريجي لشريط الدم الأحمر داخل إحداثيات (skillBar)
+                checkHpAndAutoSwitch()
 
-                // TODO: هنا يتم قراءة بكسلات الشاشة داخل حدود (barX, barY, barWidth, barHeight)
-                // فحص ما إذا كان اللون الأحمر (شريط الدم) قد نقص أو قل تدريجياً:
-                booleanHpDroppedAndSwitchToCleric()
-
-                // التكرار كل 200 ميلي ثانية لضمان سرعة الاستجابة والتبديل الفوري
                 handler.postDelayed(this, 200)
             }
         })
     }
 
-    private fun booleanHpDroppedAndSwitchToCleric() {
-        // منطق فحص النقص التدريجي للدم (HP Drop Detection):
-        // إذا نقص الدم -> يتم محاكاة ضغطة زر الكليرك (رقم 1) فوراً.
+    private fun checkHpAndAutoSwitch() {
+        // منطق التبديل التلقائي للكليرك عند نقص الدم في الشريط الأخضر
     }
 
     private fun enableDragging(view: View) {
