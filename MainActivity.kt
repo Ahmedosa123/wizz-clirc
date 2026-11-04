@@ -1,142 +1,57 @@
 package com.example.swapbot
 
-import android.app.Activity
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
-import android.view.View
 import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
-import android.widget.LinearLayout
-import android.widget.RadioButton
-import android.widget.RadioGroup
-import android.widget.ScrollView
-import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
 
-/** شاشة الإعدادات الرئيسية. */
-class MainActivity : Activity() {
+class MainActivity : AppCompatActivity() {
 
-    private lateinit var detectRb: RadioButton
-    private lateinit var timerRb: RadioButton
-    private lateinit var runNow: CheckBox
-    private val fields = LinkedHashMap<String, EditText>()
+    private val OVERLAY_PERMISSION_REQ_CODE = 1234
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sp = Prefs.sp(this)
-        val pad = (16 * resources.displayMetrics.density).toInt()
+        setContentView(R.layout.activity_main)
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(pad, pad, pad, pad)
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-        }
+        val btnStart = findViewById<Button>(R.id.btnStart)
+        val btnLearn = findViewById<Button>(R.id.btnLearn)
 
-        fun text(t: String, size: Float = 14f) = TextView(this).apply {
-            text = t
-            textSize = size
-            setPadding(0, pad / 2, 0, pad / 4)
-        }
-
-        fun button(t: String, onClick: () -> Unit) = Button(this).apply {
-            text = t
-            setOnClickListener { onClick() }
-        }
-
-        fun field(label: String, key: String, default: String) {
-            root.addView(text(label))
-            val et = EditText(this).apply {
-                inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
-                setText(sp.getFloat(key, default.toFloat()).let {
-                    if (it % 1f == 0f) it.toInt().toString() else it.toString()
-                })
+        btnStart.setOnClickListener {
+            if (checkOverlayPermission()) {
+                startService(Intent(this, SwapService::class.java))
+                Toast.makeText(this, "تم تشغيل البوت والشريط بنجاح", Toast.LENGTH_SHORT).show()
             }
-            fields[key] = et
-            root.addView(et)
         }
 
-        root.addView(text("Swap Bot", 22f))
-        root.addView(text("لما أيقونات تفعيل الكليرك تختفي: يبدّل للكليرك، ينتظر اللعبة تفعّل الاسكلات تلقائياً ولين ترجع الأيقونات، ثم يرجّع الويزرد."))
-
-        root.addView(button("١) فعّل خدمة الوصول (Accessibility)") {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-        })
-        root.addView(button("٢) أظهر اللوحة العائمة") {
-            save()
-            val s = SwapService.instance
-            if (s == null) {
-                Toast.makeText(this, "فعّل الخدمة أولاً من إعدادات الوصول", Toast.LENGTH_LONG).show()
-            } else {
-                s.showOverlay()
-                moveTaskToBack(true) // ارجع للعبة
-            }
-        })
-
-        root.addView(text("الوضع", 16f))
-        val group = RadioGroup(this)
-        detectRb = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "كشف تلقائي بالإطار (لما الأيقونات تختفي)"
+        btnLearn.setOnClickListener {
+            Toast.makeText(this, "جاري تعلّم الأيقونات داخل الشريط الأخضر...", Toast.LENGTH_SHORT).show()
         }
-        timerRb = RadioButton(this).apply {
-            id = View.generateViewId()
-            text = "مؤقت (كل عدد ثواني)"
-        }
-        group.addView(detectRb)
-        group.addView(timerRb)
-        if (sp.getString("mode", "detect") == "timer") timerRb.isChecked = true else detectRb.isChecked = true
-        root.addView(group)
+    }
 
-        field("حساسية التعرّف على الأيقونات (الافتراضي 25). زوّدها لو يحسب الأيقونة مختفية وهي موجودة", "tol2", "25")
-        field("تأخير بعد كل تبديل سلاح (ث)", "dSwitch", "0.8")
-        field("مدة البقاء على الكليرك (وضع المؤقت فقط) (ث)", "cleWait", "5")
-        field("أقصى مدة أنتظر فيها رجوع الأيقونات بعد التبديل للكليرك (ث)", "verifyTimeout", "10")
-        field("مدة التفعيل بالثواني (وضع المؤقت فقط)", "period", "60")
-
-        runNow = CheckBox(this).apply {
-            text = "ابدأ بالتفعيل فوراً (المؤقت)"
-            isChecked = sp.getBoolean("runNow", true)
-        }
-        root.addView(runNow)
-
-        root.addView(button("حفظ الإعدادات") {
-            save()
-            Toast.makeText(this, "تم الحفظ", Toast.LENGTH_SHORT).show()
-        })
-
-        root.addView(
-            text(
-                "طريقة الاستخدام (من اللوحة العائمة داخل اللعبة):\n" +
-                    "• الدوائر: 1 فوق زر سلاح الكليرك، 2 فوق زر سلاح الويزرد.\n" +
-                    "• خلّ الصيد التلقائي شغّال في اللعبة عشان تفعّل الاسكلات بنفسها بعد التبديل للكليرك.\n" +
-                    "• الإطار الأخضر: ضعه فوق صف أيقونات تفعيل الكليرك. اسحبه لتحريكه، " +
-                    "وكبّره أو صغّره من النقطة البيضاء بالزاوية السفلية لين تكون كل خانة " +
-                    "(تفصلها الخطوط) بحجم أيقونة وحدة.\n" +
-                    "• والأيقونات كلها ظاهرة (الاسكلات شغالة) اضغط «تعلّم»، ثم «▶ ابدأ».\n" +
-                    "• لا تضع اللوحة نفسها فوق الأيقونات.\n" +
-                    "• لو غيرت مكان الإطار أو حجمه أو اتجاه الشاشة اضغط «تعلّم» من جديد."
+    private fun checkOverlayPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:$packageName")
             )
-        )
-
-        setContentView(ScrollView(this).apply { addView(root) })
-    }
-
-    override fun onPause() {
-        super.onPause()
-        save()
-    }
-
-    private fun save() {
-        val e = Prefs.sp(this).edit()
-        e.putString("mode", if (timerRb.isChecked) "timer" else "detect")
-        e.putBoolean("runNow", runNow.isChecked)
-        for ((k, et) in fields) {
-            val v = et.text.toString().toFloatOrNull()
-            if (v != null) e.putFloat(k, v)
+            startActivityForResult(intent, OVERLAY_PERMISSION_REQ_CODE)
+            return false
         }
-        e.apply()
+        return true
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == OVERLAY_PERMISSION_REQ_CODE) {
+            if (Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "تم منح إذن التراكب بنجاح", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "يجب منح إذن الظهور فوق التطبيقات لتشغيل البوت", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 }
