@@ -35,6 +35,7 @@ import kotlin.math.abs
  *  - دائرة 1 = زر سلاح الكليرك، دائرة 2 = زر سلاح الويزرد (اللعبة نفسها تفعّل الاسكلات بالصيد التلقائي)
  *  - إطار أخضر تضعه فوق صف أيقونات تفعيل الكليرك، والتطبيق يقسمه لخانات ويتعلم شكل كل أيقونة
  *  - لما أي أيقونة تختفي: كليرك -> ينتظر ترجع الأيقونات -> ويزرد
+ *  - إطار برتقالي تضعه فوق زر «إعادة الربط» في رسالة انقطاع الاتصال: لو ظهر الزر يضغطه تلقائياً
  */
 class SwapService : AccessibilityService() {
 
@@ -117,10 +118,14 @@ class SwapService : AccessibilityService() {
     private var hpFrame: FrameView? = null
     private var hpLp: WindowManager.LayoutParams? = null
     private var hpShown = false
+    private var rcFrame: FrameView? = null
+    private var rcLp: WindowManager.LayoutParams? = null
+    private var rcAttached = false
     private var panel: LinearLayout? = null
     private var statusView: TextView? = null
     private var startBtn: Button? = null
     private var learnBtn: Button? = null
+    private var learnRcBtn: Button? = null
 
     @Volatile
     private var running = false
@@ -311,6 +316,18 @@ class SwapService : AccessibilityService() {
         hpLp = hlp
         hpShown = false
 
+        // إطار زر إعادة الربط (برتقالي)
+        val rw = sp.getInt("rcW", dp(110))
+        val rh = sp.getInt("rcH", dp(36))
+        val rx = sp.getInt("rcX", dm.widthPixels / 2 - rw / 2)
+        val ry = sp.getInt("rcY", dp(220))
+        val rv = FrameView(this, false, 0xFFFF9800.toInt(), "RC")
+        val rlp = newLp(rw, rh, rx, ry)
+        makeFrameTouch(rv, rlp, dp(16))
+        rcFrame = rv
+        rcLp = rlp
+        rcAttached = false
+
         // اللوحة
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -326,7 +343,7 @@ class SwapService : AccessibilityService() {
             textSize = 13f
         }
         val hint = TextView(this).apply {
-            text = "1 كليرك • 2 ويزرد • الأخضر على الاسكلات • الأحمر على شريط الدم"
+            text = "1 كليرك • 2 ويزرد • الأخضر على الاسكلات • الأحمر على شريط الدم • البرتقالي على زر «إعادة الربط»"
             setTextColor(0xFFB0BEC5.toInt())
             textSize = 10f
         }
@@ -337,9 +354,11 @@ class SwapService : AccessibilityService() {
         }
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         learnBtn = smallButton("تعلّم") { learn() }
+        learnRcBtn = smallButton("تعلّم الربط") { learnRc() }
         startBtn = smallButton("▶ ابدأ") { toggle() }
         val closeBtn = smallButton("✕") { hideOverlay() }
         row.addView(learnBtn)
+        row.addView(learnRcBtn)
         row.addView(startBtn)
         row.addView(closeBtn)
         box.addView(handle)
@@ -372,12 +391,16 @@ class SwapService : AccessibilityService() {
         statusView = null
         startBtn = null
         learnBtn = null
+        learnRcBtn = null
         frame = null
         frameLp = null
         frameShown = false
         hpFrame = null
         hpLp = null
         hpShown = false
+        rcFrame = null
+        rcLp = null
+        rcAttached = false
     }
 
     private fun showMarkers() {
@@ -405,6 +428,15 @@ class SwapService : AccessibilityService() {
             try {
                 wm.addView(hf, hl)
                 hpShown = true
+            } catch (_: Exception) {
+            }
+        }
+        val rf = rcFrame
+        val rl = rcLp
+        if (rf != null && rl != null && !rcAttached && Prefs.sp(this).getBoolean("rcOn", true)) {
+            try {
+                wm.addView(rf, rl)
+                rcAttached = true
             } catch (_: Exception) {
             }
         }
@@ -436,6 +468,14 @@ class SwapService : AccessibilityService() {
             }
             hpShown = false
         }
+        val rf = rcFrame
+        if (rf != null && rcAttached) {
+            try {
+                wm.removeView(rf)
+            } catch (_: Exception) {
+            }
+            rcAttached = false
+        }
     }
 
     private fun setStatus(t: String) {
@@ -446,6 +486,7 @@ class SwapService : AccessibilityService() {
         main.post {
             startBtn?.text = if (running) "■ وقف" else "▶ ابدأ"
             learnBtn?.isEnabled = !running
+            learnRcBtn?.isEnabled = !running
         }
     }
 
@@ -487,6 +528,15 @@ class SwapService : AccessibilityService() {
             e.putInt("hpY", loc[1])
             e.putInt("hpW", hf.width)
             e.putInt("hpH", hf.height)
+        }
+        val rf = rcFrame
+        if (rf != null && rcAttached && rf.isAttachedToWindow) {
+            val loc = IntArray(2)
+            rf.getLocationOnScreen(loc)
+            e.putInt("rcX", loc[0])
+            e.putInt("rcY", loc[1])
+            e.putInt("rcW", rf.width)
+            e.putInt("rcH", rf.height)
         }
         e.apply()
     }
@@ -614,6 +664,39 @@ class SwapService : AccessibilityService() {
         }.start()
     }
 
+    /** يتعلّم شكل زر «إعادة الربط». لازم رسالة الانقطاع تكون ظاهرة والإطار البرتقالي فوق الزر. */
+    private fun learnRc() {
+        if (running) return
+        savePositions()
+        val sp = Prefs.sp(this)
+        val r = frameRegion(sp, "rc")
+        if (!validRegion(r)) {
+            toast("ضع الإطار البرتقالي فوق زر إعادة الربط أولاً")
+            return
+        }
+        hideMarkers()
+        setStatus("أتعلّم زر إعادة الربط...")
+        Thread {
+            Thread.sleep(450) // انتظر اختفاء الدوائر والإطارات من الشاشة
+            val px = grabRegion(r)
+            main.post {
+                if (px != null) {
+                    val t = singleThumb(px, r.w, r.h)
+                    sp.edit()
+                        .putString("rcRef", t.joinToString(",") { it.toInt().toString() })
+                        .putString("rcGeom", geomString(r))
+                        .apply()
+                    setStatus("تعلّمت زر إعادة الربط ✓")
+                    toast("تعلّمت زر إعادة الربط. لازم كانت رسالة الانقطاع ظاهرة وقت التعلّم")
+                } else {
+                    setStatus("فشل تعلّم زر الربط")
+                    toast("تعذرت قراءة الشاشة (ممكن اللعبة تمنع لقطات الشاشة)")
+                }
+                if (panel != null) showMarkers()
+            }
+        }.start()
+    }
+
     // ---------------------------------------------------------------- مقارنة الأيقونات
 
     /** يقسم صورة الإطار إلى خانات مربعة (ضلعها = ارتفاع الإطار) ويرجع صورة مصغرة لكل خانة. */
@@ -649,6 +732,42 @@ class SwapService : AccessibilityService() {
             out.add(t)
         }
         return out
+    }
+
+    /** صورة مصغرة وحدة لكل المنطقة (تُستخدم لزر إعادة الربط). */
+    private fun singleThumb(px: IntArray, w: Int, h: Int): FloatArray {
+        val t = FloatArray(THUMB * THUMB * 3)
+        val cnt = IntArray(THUMB * THUMB)
+        for (yy in 0 until h) {
+            val ty = yy * THUMB / h
+            for (xx in 0 until w) {
+                val tx = xx * THUMB / w
+                val p = px[yy * w + xx]
+                val idx = ty * THUMB + tx
+                t[idx * 3] += Color.red(p).toFloat()
+                t[idx * 3 + 1] += Color.green(p).toFloat()
+                t[idx * 3 + 2] += Color.blue(p).toFloat()
+                cnt[idx]++
+            }
+        }
+        for (i in 0 until THUMB * THUMB) {
+            if (cnt[i] > 0) {
+                t[i * 3] /= cnt[i]
+                t[i * 3 + 1] /= cnt[i]
+                t[i * 3 + 2] /= cnt[i]
+            }
+        }
+        return t
+    }
+
+    private fun loadRcRef(sp: SharedPreferences): FloatArray? {
+        val s = sp.getString("rcRef", null) ?: return null
+        return try {
+            val a = s.split(",").map { it.toFloat() }.toFloatArray()
+            if (a.size == THUMB * THUMB * 3) a else null
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun tdist(a: FloatArray, b: FloatArray): Float {
@@ -708,11 +827,23 @@ class SwapService : AccessibilityService() {
         savePositions()
         val sp = Prefs.sp(this)
         val detect = sp.getString("mode", "detect") == "detect"
+
+        // زر إعادة الربط: لو متعلَّم لازم الإطار البرتقالي ما يتحرك عن مكان التعلّم
+        val rcOn = sp.getBoolean("rcOn", true)
+        val rcLearned = rcOn && loadRcRef(sp) != null
+        if (rcLearned) {
+            val learned = sp.getString("rcGeom", null)
+            if (learned == null || !sameGeom(learned, geomString(frameRegion(sp, "rc")))) {
+                toast("غيّرت مكان الإطار البرتقالي أو حجمه، اضغط «تعلّم الربط» من جديد")
+                return
+            }
+        }
+
         if (detect) {
             val hpOn = sp.getBoolean("hpOn", true)
             val iconsLearned = loadRefs() != null
             val hpLearned = hpOn && loadHpRef(sp) != null
-            if (!iconsLearned && !hpLearned) {
+            if (!iconsLearned && !hpLearned && !rcLearned) {
                 toast("اضغط «تعلّم» والأيقونات ظاهرة والدم ممتلئ أولاً")
                 return
             }
@@ -732,6 +863,9 @@ class SwapService : AccessibilityService() {
             } else if (hpOn) {
                 toast("شريط الدم ما تعلّمته (اضغط «تعلّم» والدم ممتلئ). سأراقب الأيقونات فقط")
             }
+        }
+        if (rcOn && !rcLearned) {
+            toast("زر إعادة الربط ما تعلّمته (اضغط «تعلّم الربط» ورسالة الانقطاع ظاهرة). الربط التلقائي معطّل")
         }
         hideMarkers()
         running = true
@@ -787,6 +921,14 @@ class SwapService : AccessibilityService() {
         val hpRef = loadHpRef(sp)
         val hpRegion = frameRegion(sp, "hp")
 
+        val rcRef = loadRcRef(sp)
+        val rcRegion = frameRegion(sp, "rc")
+        val rcTol = sp.getFloat("rcTol", 20f).coerceAtLeast(1f)
+        val rcWait = (sp.getFloat("rcWait", 4f).coerceAtLeast(1f) * 1000).toLong()
+        val rcAfter = (sp.getFloat("rcAfter", 8f).coerceAtLeast(0f) * 1000).toLong()
+        val rcTries = sp.getFloat("rcTries", 5f).toInt().coerceAtLeast(1)
+        val rcActive = sp.getBoolean("rcOn", true) && rcRef != null && validRegion(rcRegion)
+
         val cleX = sp.getInt("cleX", -1).toFloat()
         val cleY = sp.getInt("cleY", -1).toFloat()
         val wizX = sp.getInt("wizX", -1).toFloat()
@@ -841,11 +983,60 @@ class SwapService : AccessibilityService() {
             setStatus("يشتغل • تم $cycles مرة (دم) ✓")
         }
 
+        // ---- إعادة الربط عند انقطاع الاتصال
+        var reconnects = 0
+        var rcBad = 0
+
+        fun rcVisible(px: IntArray): Boolean =
+            tdist(rcRef!!, singleThumb(px, rcRegion.w, rcRegion.h)) <= rcTol
+
+        fun reconnect() {
+            var tries = 0
+            while (running && tries < rcTries) {
+                tries++
+                setStatus("انقطع الاتصال! أعيد الربط ($tries/$rcTries)...")
+                tap(rcRegion.x + rcRegion.w / 2f, rcRegion.y + rcRegion.h / 2f)
+                sleepRun(rcWait)
+                val p = grabRegion(rcRegion)
+                if (p != null && !rcVisible(p)) {
+                    reconnects++
+                    setStatus("تم إعادة الربط ($reconnects) ✓ أنتظر اللعبة تحمّل...")
+                    sleepRun(rcAfter)
+                    return
+                }
+            }
+            if (running) setStatus("ما نجحت إعادة الربط بعد $rcTries محاولات")
+        }
+
+        /** يرجع true لو رسالة الانقطاع ظاهرة الآن (فيتخطى باقي المنطق عشان ما يضغط أزرار غلط). */
+        fun rcStep(px: IntArray?): Boolean {
+            if (px == null) return false
+            if (!rcVisible(px)) {
+                rcBad = 0
+                return false
+            }
+            rcBad++
+            if (rcBad >= 2) { // تأكيد مرتين لتجنب الضغط بالغلط
+                rcBad = 0
+                reconnect()
+            }
+            return true
+        }
+
         try {
             if (!detect) {
                 val firstDelay = if (runNow) 0L else period
                 var next = System.currentTimeMillis() + firstDelay
+                var nextRc = 0L
                 while (running) {
+                    if (rcActive && System.currentTimeMillis() >= nextRc) {
+                        val handled = rcStep(grabRegion(rcRegion))
+                        nextRc = System.currentTimeMillis() + 1500
+                        if (handled) {
+                            sleepRun(700)
+                            continue
+                        }
+                    }
                     if (System.currentTimeMillis() >= next) {
                         cycle()
                         next = System.currentTimeMillis() + period
@@ -860,15 +1051,22 @@ class SwapService : AccessibilityService() {
                     val regs = ArrayList<Region>()
                     if (iconsOn) regs.add(region)
                     if (hpOn) regs.add(hpRegion)
+                    if (rcActive) regs.add(rcRegion)
                     val got = grabRegions(regs)
                     var idx = 0
                     val px = if (iconsOn) got[idx++] else null
-                    val hpPx = if (hpOn) got[idx] else null
-                    if (px == null && hpPx == null) {
+                    val hpPx = if (hpOn) got[idx++] else null
+                    val rcPx = if (rcActive) got[idx] else null
+                    if (px == null && hpPx == null && rcPx == null) {
                         fails++
                         if (fails == 10) toast("ما أقدر أقرأ الشاشة، ممكن اللعبة تمنع اللقطات")
                     } else {
                         fails = 0
+                        if (rcStep(rcPx)) {
+                            bad = 0
+                            sleepRun(700)
+                            continue
+                        }
                         if (hpPx != null && System.currentTimeMillis() >= hpBlockUntil &&
                             hpNow(hpPx) < hpFull - drop
                         ) {
