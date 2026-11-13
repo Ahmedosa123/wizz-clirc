@@ -23,6 +23,7 @@ class MainActivity : Activity() {
     private lateinit var timerRb: RadioButton
     private lateinit var runNow: CheckBox
     private lateinit var hpOn: CheckBox
+    private lateinit var rcOn: CheckBox
     private val fields = LinkedHashMap<String, EditText>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +102,18 @@ class MainActivity : Activity() {
         field("أقصى مدة يبقى على الكليرك لين يرجع الدم (ث)", "hpWait", "3")
         field("راحة بعد كل مرة بسبب الدم (ث)", "hpCool", "2")
         field("حساسية لون الدم (الافتراضي 40). زوّدها لو يحسب الدم ناقص وهو ممتلئ", "hpTol", "40")
+
+        root.addView(text("إعادة الربط عند انقطاع الاتصال", 16f))
+        rcOn = CheckBox(this).apply {
+            text = "اضغط «إعادة الربط» تلقائياً لما تظهر رسالة الانقطاع (disconnected)"
+            isChecked = sp.getBoolean("rcOn", true)
+        }
+        root.addView(rcOn)
+        field("حساسية التعرّف على زر إعادة الربط (الافتراضي 20). زوّدها لو ما انتبه للزر، وقلّلها لو يضغط بالغلط", "rcTol", "20")
+        field("انتظار بعد كل ضغطة على إعادة الربط (ث)", "rcWait", "4")
+        field("عدد محاولات إعادة الربط", "rcTries", "5")
+        field("انتظار بعد نجاح الربط قبل ما يرجع يشتغل (ث) — وقت تحميل اللعبة", "rcAfter", "8")
+
         field("تأخير بعد كل تبديل سلاح (ث)", "dSwitch", "0.8")
         field("مدة البقاء على الكليرك (وضع المؤقت فقط) (ث)", "cleWait", "5")
         field("أقصى مدة أنتظر فيها رجوع الأيقونات بعد التبديل للكليرك (ث)", "verifyTimeout", "10")
@@ -128,8 +141,11 @@ class MainActivity : Activity() {
                     "• الإطار الأحمر: ضعه على شريط الدم (يكفي ارتفاع صغير). لازم الدم ممتلئ وقت «تعلّم».\n" +
                     "• لو الدم نقص: يبدّل للكليرك بسرعة، وبعد ما يرجع الدم (أو تنتهي المهلة) يرجع للويزرد.\n" +
                     "• والأيقونات كلها ظاهرة (الاسكلات شغالة) اضغط «تعلّم»، ثم «▶ ابدأ».\n" +
+                    "• الإطار البرتقالي (إعادة الربط): لما تظهر رسالة disconnected ضع الإطار البرتقالي فوق زر " +
+                    "«إعادة الربط» بحيث يغطيه بالكامل، ثم اضغط «تعلّم الربط». بعدها لو ظهرت الرسالة " +
+                    "وقت التشغيل يضغط الزر لوحده ويعيد المحاولة، ويوقف التبديل لين يرجع الاتصال.\n" +
                     "• لا تضع اللوحة نفسها فوق الأيقونات.\n" +
-                    "• لو غيرت مكان الإطار أو حجمه أو اتجاه الشاشة اضغط «تعلّم» من جديد."
+                    "• لو غيرت مكان الإطار أو حجمه أو اتجاه الشاشة اضغط «تعلّم» (أو «تعلّم الربط») من جديد."
             )
         )
 
@@ -146,6 +162,7 @@ class MainActivity : Activity() {
         e.putString("mode", if (timerRb.isChecked) "timer" else "detect")
         e.putBoolean("runNow", runNow.isChecked)
         e.putBoolean("hpOn", hpOn.isChecked)
+        e.putBoolean("rcOn", rcOn.isChecked)
         for ((k, et) in fields) {
             val v = et.text.toString().toFloatOrNull()
             if (v != null) e.putFloat(k, v)
